@@ -1,15 +1,16 @@
 use std::net::UdpSocket;
 use std::str;
 use mouse_rs::{Mouse, types::keys::Keys};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use serde_json::from_str;
 
 #[derive(Serialize, Deserialize, Debug)]
-struct cursor_object_message {
+struct CursorObjectMessage {
     x: i32,
     y: i32,
-    click_gesture_distance: f64,
+    left_click_gesture_distance: f32,
+    right_click_gesture_distance: f32,
     num_of_hands: i8
 }
 
@@ -25,9 +26,14 @@ fn main() -> std::io::Result<()> {
     let fast_threshold = 50;       // Distance threshold for acceleration
     let slow_threshold: i32 = 7;       // Distance threshold for deceleration
 
-    let click_gesture_distance_threshold: f64 = 6.0;
+    let left_click_gesture_distance_threshold: f32 = 6.0;
+    let right_click_gesture_distance_threshold: f32 = 6.0;
 
     let mut left_click_hold = false;
+
+    let click_delay = Duration::from_millis(250); // 500ms delay between right clicks
+    let mut last_click = Instant::now() - click_delay; // Initialize to allow immediate click
+
 
     println!("Listening on 127.0.0.1:9922...");
 
@@ -39,7 +45,7 @@ fn main() -> std::io::Result<()> {
 
         let received = String::from_utf8_lossy(&buf[..amt]);
 
-        if let Ok(cursor_message) = from_str::<cursor_object_message>(&received) {
+        if let Ok(cursor_message) = from_str::<CursorObjectMessage>(&received) {
             println!("Received: {:?}", cursor_message);
             mouse.move_to(cursor_message.x, cursor_message.y).expect("Unable to move mouse");
 
@@ -47,27 +53,107 @@ fn main() -> std::io::Result<()> {
             // println!("Distance: {}", cursor_message.click_gesture_distance);
             println!("Num of hands: {}", cursor_message.num_of_hands);
 
-            if cursor_message.click_gesture_distance < click_gesture_distance_threshold {
 
-                mouse.click(&Keys::LEFT).expect("Unable to click");
-                println!("CLICK")
-            } else {
-
-            }
+            /*
+                While:
+                    number of hands > 1
+                        if left click gesture distance < threshold
+                            if mouse timer < 250ms
+                                mouse.press(left)
+                            else
+                                timer still going
+                        else
+                            mouse.release(left) //Check if mouse is held down first?
+                        if right click gesture distance < threshold
+                            if mouse timer < 250ms
+                                mouse.click(right)
+                            else
+                                timer still going
+                        else
+                            nothing
+                    number of hands == 1
+                        if left click gesture distance < threshold
+                            if mouse timer < 250ms
+                                mouse.click(left)
+                            else
+                                timer still going
+                        else
+                            nothing
+                        if right click gesture distance < threshold
+                            if mouse timer < 250ms
+                                mouse.click(left)
+                            else
+                                timer still going
+                        else
+                            nothing
+             */
 
             if cursor_message.num_of_hands > 1 {
-                left_click_hold = true;
-                mouse.press(&Keys::LEFT).expect("Unable to press");
-                println!("HOLD")
+                if cursor_message.left_click_gesture_distance < left_click_gesture_distance_threshold {
+                    if last_click.elapsed() >= click_delay {
+                        if !left_click_hold {
+                            left_click_hold = true;
+                            mouse.press(&Keys::LEFT).expect("Unable to left click");
+                            println!("LEFT PRESS");
+                            last_click = Instant::now(); // Reset the timer
+                        }
+                    } else {
+                        println!("Timer still going");
+                    }
+                } else {
+                    if left_click_hold {
+                        left_click_hold = false;
+                        mouse.release(&Keys::LEFT).expect("Unable to release left click");
+                    }
+                }
+
+                if cursor_message.right_click_gesture_distance < right_click_gesture_distance_threshold {
+                    if last_click.elapsed() >= click_delay {
+                        mouse.click(&Keys::RIGHT).expect("Unable to right click");
+                        println!("RIGHT CLICK");
+                        last_click = Instant::now(); // Reset the timer
+                    } else {
+                        println!("Timer still going");
+                    }
+                }
+
+
+                // left_click_hold = true;
+                // mouse.press(&Keys::LEFT).expect("Unable to press");
+                // println!("HOLD")
             } else {
+                if cursor_message.left_click_gesture_distance < left_click_gesture_distance_threshold {
+                    if last_click.elapsed() >= click_delay {
+                        mouse.click(&Keys::LEFT).expect("Unable to left click");
+                        println!("LEFT CLICK W/ LEFT HAND");
+                        last_click = Instant::now(); // Reset the timer
+                    } else {
+                        println!("Timer still going");
+                    }
+                }
+
+                if cursor_message.right_click_gesture_distance < right_click_gesture_distance_threshold {
+                    if last_click.elapsed() >= click_delay {
+                        mouse.click(&Keys::LEFT).expect("Unable to left click");
+                        println!("LEFT CLICK W/ RIGHT HAND");
+                        last_click = Instant::now(); // Reset the timer
+                    } else {
+                        println!("Timer still going");
+                    }
+                }
+
+                // if cursor_message.left_click_gesture_distance < left_click_gesture_distance_threshold {
+                //
+                //     mouse.click(&Keys::LEFT).expect("Unable to click");
+                //     println!("LEFT CLICK")
+                // }
+
                 if left_click_hold == true {
                     left_click_hold = false;
                     mouse.release(&Keys::LEFT).expect("Unable to release");
                     println!("RELEASE");
                 }
             }
-
-
         } else {
             println!("Failed to parse JSON: {}", received);
         }
