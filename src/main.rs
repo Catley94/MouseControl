@@ -48,14 +48,26 @@ fn main() -> std::io::Result<()> {
             println!("Num of hands: {}", cursor_message.num_of_hands);
 
             if cursor_message.click_gesture_distance < click_gesture_distance_threshold {
-                left_click_hold = true;
-                // mouse.click(&Keys::LEFT).expect("Unable to click");
-                mouse.press(&Keys::LEFT).expect("Unable to press");
+
+                mouse.click(&Keys::LEFT).expect("Unable to click");
                 println!("CLICK")
             } else {
-                left_click_hold = false;
-                mouse.release(&Keys::LEFT).expect("Unable to release");
+
             }
+
+            if cursor_message.num_of_hands > 1 {
+                left_click_hold = true;
+                mouse.press(&Keys::LEFT).expect("Unable to press");
+                println!("HOLD")
+            } else {
+                if left_click_hold == true {
+                    left_click_hold = false;
+                    mouse.release(&Keys::LEFT).expect("Unable to release");
+                    println!("RELEASE");
+                }
+            }
+
+
         } else {
             println!("Failed to parse JSON: {}", received);
         }
